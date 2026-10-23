@@ -12,6 +12,7 @@ import {
   normalizePolicy,
   policyNote,
   selectPatches,
+  shouldInstallFreshFullAccess,
   skippedPatches,
 } from "../lib/patch-policy.js";
 
@@ -83,4 +84,26 @@ test("gate 编号在上游补丁表里真实存在（上游改 id 时这里失�
 test("policyNote 反映当前策略", () => {
   assert.match(policyNote("safe"), /skip|跳过/);
   assert.match(policyNote("full"), /full/);
+});
+
+test("safe 策略不安装“新会话强推 full”钩子（默认关闭）", () => {
+  assert.equal(shouldInstallFreshFullAccess({ patchPolicy: "safe" }), false);
+  assert.equal(shouldInstallFreshFullAccess({}), false);
+  assert.equal(shouldInstallFreshFullAccess(), false);
+  assert.equal(shouldInstallFreshFullAccess({ patchPolicy: "FULL" }), true);
+});
+
+test("freshFullAccess 布尔可双向覆盖策略", () => {
+  assert.equal(shouldInstallFreshFullAccess({ patchPolicy: "full", freshFullAccess: false }), false);
+  assert.equal(shouldInstallFreshFullAccess({ patchPolicy: "safe", freshFullAccess: true }), true);
+  assert.equal(shouldInstallFreshFullAccess({ freshFullAccess: "yes" }), false); // 非布尔忽略，回落 safe
+});
+
+test("index.js 的 installFreshFullAccess 调用点被策略门控（rebase 看门狗）", () => {
+  const src = readFileSync(join(here, "..", "lib", "index.js"), "utf8");
+  const calls = src.match(/installFreshFullAccess\(ctx\);/g) ?? [];
+  assert.equal(calls.length, 1, "applyHostHooks 里应恰好一处调用");
+  const gateIdx = src.indexOf("shouldInstallFreshFullAccess");
+  const callIdx = src.indexOf("installFreshFullAccess(ctx);");
+  assert.ok(gateIdx !== -1 && gateIdx < callIdx, "调用必须包在 shouldInstallFreshFullAccess(...) 条件内");
 });
